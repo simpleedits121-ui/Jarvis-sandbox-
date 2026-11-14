@@ -55,8 +55,6 @@ fun SandboxApp(workspace: File) {
     var selectedFile by remember { mutableStateOf<File?>(null) }
     var output by remember { mutableStateOf("JARVIS SANDBOX runtime ready. Type 'help' to see supported commands.") }
     var command by remember { mutableStateOf("") }
-    var agentTask by remember { mutableStateOf("") }
-    var taskLog by remember { mutableStateOf("Agent is idle. No external AI connection configured.") }
     var showConfirm by remember { mutableStateOf<File?>(null) }
     var workerUrl by remember { mutableStateOf("http://127.0.0.1:8765") }
     var workerToken by remember { mutableStateOf("") }
@@ -108,7 +106,7 @@ fun SandboxApp(workspace: File) {
                     title = {
                         Column {
                             Text("JARVIS SANDBOX", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                            Text("LOCAL WORKSPACE  •  v0.2.0", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp)
+                            Text("LOCAL WORKSPACE  •  SWARM v0.3", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg),
@@ -157,10 +155,7 @@ fun SandboxApp(workspace: File) {
                         command = ""
                         refresh++
                     })
-                    "Agent" -> AgentScreen(agentTask, { agentTask = it }, taskLog, {
-                        taskLog = if (agentTask.isBlank()) "Enter a task first." else
-                            "TASK QUEUED (local draft)\n$agentTask\n\nNo AI provider is connected yet. The agent API and approval gateway are integration milestones."
-                    })
+                    "Agent" -> AgentScreen(workerUrl = workerUrl, workerToken = workerToken)
                     "Bridge" -> BridgeScreen(onImport = { importLauncher.launch(arrayOf("*/*")) })
                     "3D Lab" -> ThreeDLabScreen(
                         workerUrl = workerUrl,
@@ -224,7 +219,7 @@ fun SandboxApp(workspace: File) {
 @Composable
 fun HomeScreen(workspace: File, onNavigate: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Your workspace. Your tools. Your JARVIS.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("Your workspace. Your AI production team.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
         Text("A local-first control center for building JARVIS and creating digital assets.", color = Muted)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatCard("WORKSPACE", "${workspace.walkTopDown().count { it.isFile }} files", Modifier.weight(1f))
@@ -234,7 +229,7 @@ fun HomeScreen(workspace: File, onNavigate: (String) -> Unit) {
         listOf(
             Triple("Files", "Manage project files in the private workspace", Icons.Default.Folder),
             Triple("Terminal", "Run safe built-in workspace commands", Icons.Default.Terminal),
-            Triple("Agent", "Queue tasks and connect an AI operator later", Icons.Default.Psychology),
+            Triple("Agent", "Direct the local JARVIS worker swarm", Icons.Default.Psychology),
             Triple("Bridge", "Import Blender models and exchange project assets", Icons.Default.ViewInAr)
         ).forEach { (name, desc, icon) ->
             Card(colors = CardDefaults.cardColors(containerColor = Panel), modifier = Modifier.fillMaxWidth().clickable { onNavigate(name) }) {
@@ -316,24 +311,6 @@ fun TerminalScreen(command: String, onCommand: (String) -> Unit, output: String,
             Button(onClick = onRun) { Icon(Icons.Default.PlayArrow, null) }
         }
         Text("Try: help, pwd, ls, mkdir models, touch notes.txt, write notes.txt hello, cat notes.txt", color = Muted, fontSize = 11.sp)
-    }
-}
-
-@Composable
-fun AgentScreen(task: String, onTask: (String) -> Unit, log: String, onQueue: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("AI Operator", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.RadioButtonChecked, null, tint = Color(0xFFFFC66D))
-            Spacer(Modifier.width(8.dp))
-            Text("Not connected • local task queue only", color = Muted, fontSize = 12.sp)
-        }
-        OutlinedTextField(task, onTask, modifier = Modifier.fillMaxWidth().weight(0.35f), label = { Text("Describe a task for JARVIS") }, minLines = 4)
-        Button(onClick = onQueue, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.AddTask, null); Text(" Queue task") }
-        Card(colors = CardDefaults.cardColors(containerColor = Panel), modifier = Modifier.fillMaxWidth()) {
-            Text(log, Modifier.padding(14.dp), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-        }
-        Text("Planned integration: local GGUF inference, optional remote model, tool registry, approval prompts, audit log and rollback snapshots.", color = Muted, fontSize = 12.sp)
     }
 }
 

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 tmp = tempfile.mkdtemp(prefix="jarvis-worker-test-")
 os.environ["JARVIS_WORKSPACE"] = tmp
+os.environ["JARVIS_CONFIG_HOME"] = os.path.join(tmp, "private-config")
 os.environ["JARVIS_HOST"] = "127.0.0.1"
 
 from jarvis_worker.main import app
@@ -29,3 +30,102 @@ def test_image_job_requires_provider_but_records_upload():
     r = client.post("/api/v1/3d/jobs", files={"image": ("ref.png", b"fake-image", "image/png")})
     assert r.status_code == 200
     assert r.json()["status"] == "needs_provider"
+
+def test_agent_config_does_not_return_api_key():
+    response = client.post("/api/v1/agent/config", json={
+        "local_base_url": "http://127.0.0.1:8080/v1",
+        "local_model": "tiny-local",
+        "remote_base_url": "https://api.openai.com/v1",
+        "remote_model": "gpt-4o-mini",
+        "remote_api_key": "test-secret-key",
+    })
+    assert response.status_code == 200
+    assert response.json()["remote_configured"] is True
+    fetched = client.get("/api/v1/agent/config")
+    assert fetched.status_code == 200
+    assert fetched.json()["remote_key_set"] is True
+    assert "test-secret-key" not in fetched.text
+
+
+def test_cpu_worker_creates_scene_package_without_model():
+    response = client.post("/api/v1/agent/chat", json={
+        "message": "Create a small anime laboratory scene with a desk, chair and cinematic lighting"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "local_worker_fallback"
+    action = data["actions"][0]["result"]
+    from pathlib import Path
+    project = Path(action["path"])
+    assert (project / "scene_spec.json").is_file()
+    assert (project / "scene_preview.obj").is_file()
+    script = (project / "scene.py").read_text()
+    compile(script, str(project / "scene.py"), "exec")
+    assert action["object_count"] >= 10
+
+
+def test_destructive_action_waits_for_approval():
+    from pathlib import Path
+    root = Path(__import__("jarvis_worker.main", fromlist=["APP_ROOT"]).APP_ROOT)
+    target = root / "approval-test.txt"
+    target.write_text("keep me")
+    response = client.post("/api/v1/agent/chat", json={
+        "message": "Delete approval-test.txt"
+    })
+    # No model is configured; deletion is not guessed by the deterministic fallback.
+    from jarvis_worker.agent import execute_tool
+    result = execute_tool(root, "delete_file", {"name": "approval-test.txt"})
+    approval = result["pending_approval"]
+    assert target.exists()
+    decision = client.post(f"/api/v1/agent/approvals/{approval['approval_id']}", json={"approved": False})
+    assert decision.status_code == 200
+    assert target.exists()
+
+
+def test_local_model_failure_falls_back_to_remote(monkeypatch):
+    import asyncio
+    from jarvis_worker import agent
+    root = __import__("jarvis_worker.main", fromlist=["APP_ROOT"]).APP_ROOT
+    agent.save_config(root, {
+        "local_base_url": "http://127.0.0.1:8080/v1", "local_model": "local",
+        "remote_base_url": "https://example.invalid/v1", "remote_model": "remote",
+        "remote_api_key": "secret",
+    })
+    calls = []
+    async def fake_call(base, model, key, messages):
+        calls.append(model)
+        if model == "local":
+            raise RuntimeError("local server offline")
+        return '{"reply":"Remote fallback answered","actions":[]}'
+    monkeypatch.setattr(agent, "call_model", fake_call)
+    result = asyncio.run(agent.handle_chat(root, agent.AgentChatRequest(message="Hello JARVIS")))
+    assert calls == ["local", "remote"]
+    assert result["provider"] == "remote"
+    assert result["reply"] == "Remote fallback answered"
+
+
+def test_approved_delete_executes_only_after_approval():
+    from pathlib import Path
+    root = Path(__import__("jarvis_worker.main", fromlist=["APP_ROOT"]).APP_ROOT)
+    target = root / "approved-delete-test.txt"
+    target.write_text("delete only after approval")
+    from jarvis_worker.agent import execute_tool
+    result = execute_tool(root, "delete_file", {"name": target.name})
+    approval = result["pending_approval"]
+    assert target.exists()
+    decision = client.post(f"/api/v1/agent/approvals/{approval['approval_id']}", json={"approved": True})
+    assert decision.status_code == 200
+    assert not target.exists()
+
+
+def test_agent_secret_file_is_not_readable_through_workspace_tools():
+    assert client.get("/api/v1/files/agent-settings.json").status_code == 403
+    from pathlib import Path
+    from jarvis_worker.agent import safe_workspace_path
+    from fastapi import HTTPException
+    root = Path(__import__("jarvis_worker.main", fromlist=["APP_ROOT"]).APP_ROOT)
+    try:
+        safe_workspace_path(root, "agent-settings.json")
+        assert False, "private settings should be blocked"
+    except HTTPException as exc:
+        assert exc.status_code == 403

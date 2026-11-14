@@ -14,7 +14,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-APP_ROOT = Path(os.environ.get("JARVIS_WORKSPACE", Path.home() / "JarvisWorkspace")).resolve()
+APP_ROOT = Path(os.environ.get("JARVIS_WORKSPACE", Path.home() / "storage" / "downloads" / "JARVIS_WORKSPACE")).resolve()
 UPLOADS = APP_ROOT / "uploads"
 OUTPUTS = APP_ROOT / "outputs"
 JOBS = APP_ROOT / "jobs"
@@ -30,7 +30,7 @@ LLM_BASE_URL = os.environ.get("JARVIS_LLM_BASE_URL", "").rstrip("/")
 LLM_API_KEY = os.environ.get("JARVIS_LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("JARVIS_LLM_MODEL", "")
 
-app = FastAPI(title="JARVIS Sandbox Worker", version="0.2.0")
+app = FastAPI(title="JARVIS Sandbox Worker", version="0.3.0")
 agent_tasks: dict[str, dict[str, Any]] = {}
 three_d_jobs: dict[str, dict[str, Any]] = {}
 for saved_job in JOBS.glob("3d-*.json"):
@@ -51,6 +51,8 @@ def auth(authorization: str | None) -> None:
         raise HTTPException(401, "Invalid worker token.")
 
 def safe_path(name: str) -> Path:
+    if name == "agent-settings.json":
+        raise HTTPException(403, "Private agent credentials are not exposed through the file API.")
     if not name or name in (".", "..") or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,127}", name):
         raise HTTPException(400, "Use a simple filename (letters, numbers, spaces, dot, underscore or hyphen).")
     target = (APP_ROOT / name).resolve()
@@ -67,13 +69,17 @@ class AgentRequest(BaseModel):
 
 @app.get("/health")
 def health():
+    try:
+        brain = public_config(load_config(APP_ROOT))
+    except Exception:
+        brain = {"local_configured": False, "remote_configured": False}
     return {
         "ok": True,
         "service": "jarvis-sandbox-worker",
         "version": app.version,
         "workspace": str(APP_ROOT),
         "three_d_provider_configured": bool(THREED_PROVIDER_URL),
-        "llm_configured": bool(LLM_BASE_URL and LLM_MODEL),
+        "agent_brain": brain,
     }
 
 @app.get("/api/v1/files")
@@ -81,6 +87,8 @@ def list_files(authorization: str | None = Header(default=None)):
     auth(authorization)
     rows = []
     for p in sorted(APP_ROOT.iterdir(), key=lambda x: x.name.lower()):
+        if p.name == "agent-settings.json":
+            continue
         rows.append({"name": p.name, "type": "directory" if p.is_dir() else "file",
                      "size": p.stat().st_size if p.is_file() else None})
     return {"files": rows}
@@ -286,3 +294,70 @@ def get_3d_output(job_id: str, filename: str, authorization: str | None = Header
     if target.parent != OUTPUTS.resolve() or not target.is_file():
         raise HTTPException(404, "Output not found.")
     return FileResponse(target, filename=safe_name, media_type="model/gltf-binary")
+
+
+# --- JARVIS Swarm: model gateway, local workers and approval queue ---
+from .agent import (
+    AgentChatRequest, AgentConfigRequest, ApprovalRequest, handle_chat,
+    load_config, public_config, save_config, pending_dir, list_approvals,
+    run_approved_action,
+)
+
+@app.get("/api/v1/agent/config")
+def get_agent_config(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return public_config(load_config(APP_ROOT))
+
+@app.post("/api/v1/agent/config")
+def update_agent_config(req: AgentConfigRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    config = load_config(APP_ROOT)
+    for field in ("local_base_url", "local_model", "remote_base_url", "remote_model"):
+        value = getattr(req, field).strip()
+        if field.endswith("base_url") and value and not value.startswith(("http://", "https://")):
+            raise HTTPException(400, f"{field} must start with http:// or https://")
+        config[field] = value
+    if req.clear_remote_key:
+        config["remote_api_key"] = ""
+    elif req.remote_api_key is not None and req.remote_api_key.strip():
+        config["remote_api_key"] = req.remote_api_key.strip()
+    save_config(APP_ROOT, config)
+    return public_config(config)
+
+@app.post("/api/v1/agent/chat")
+async def agent_chat(req: AgentChatRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return await handle_chat(APP_ROOT, req)
+
+@app.get("/api/v1/agent/approvals")
+def get_agent_approvals(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {"approvals": list_approvals(APP_ROOT)}
+
+@app.post("/api/v1/agent/approvals/{approval_id}")
+def decide_agent_approval(approval_id: str, req: ApprovalRequest,
+                          authorization: str | None = Header(default=None)):
+    auth(authorization)
+    path = (pending_dir(APP_ROOT) / f"{approval_id}.json").resolve()
+    if path.parent != pending_dir(APP_ROOT).resolve() or not path.is_file():
+        raise HTTPException(404, "Approval request not found.")
+    row = json.loads(path.read_text(encoding="utf-8"))
+    if row.get("status") != "pending":
+        raise HTTPException(409, "Approval request has already been handled.")
+    if not req.approved:
+        row["status"] = "rejected"
+        row["result"] = "Rejected by user."
+    else:
+        result = run_approved_action(APP_ROOT, row["action"], row.get("arguments", {}))
+        row["status"] = "approved"
+        row["result"] = result
+    path.write_text(json.dumps(row, indent=2), encoding="utf-8")
+    return row
+
+@app.get("/api/v1/blender/status")
+def blender_runtime_status(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    binary = os.environ.get("JARVIS_BLENDER_BIN") or shutil.which("blender")
+    return {"available": bool(binary), "binary": binary,
+            "mode": "background Blender Python" if binary else "script-and-OBJ export only",
+            "note": "The Android Blender app is a separate sandbox. Termux cannot silently control its UI or embedded Python unless that app exposes a compatible bridge."}

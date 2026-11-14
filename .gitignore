@@ -5,3 +5,9 @@ build/
 **/build/
 *.iml
 .DS_Store
+
+__pycache__/
+*.py[cod]
+.venv/
+.env
+JARVIS_WORKSPACE/

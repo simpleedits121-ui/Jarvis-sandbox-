@@ -32,7 +32,7 @@ git add -A
 if git diff --cached --quiet; then
   echo "No new staged changes."
 else
-  git commit -m "Build JARVIS Sandbox v0.2 foundation"
+  git commit -m "Implement JARVIS Swarm v0.3 local-first agent"
 fi
 
 git push -u origin main

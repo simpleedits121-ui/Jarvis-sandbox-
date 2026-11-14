@@ -37,3 +37,10 @@ From the extracted project directory run:
 bash push_to_github_termux.sh
 ```
 The script registers the shared-storage path as a safe Git directory, configures the repository remote, asks for commit identity only if missing, and pushes `main`. GitHub may prompt for a Personal Access Token or other configured authentication.
+
+
+## JARVIS Swarm v0.3 (local-first AI operator)
+
+The Agent tab now connects to the Termux worker API. It supports local-first / remote-fallback model routing, a safe tool allow-list, an approval queue for destructive operations, and CPU-first procedural scene workers. See `worker/README.md` for Android setup and model configuration.
+
+Start the worker from Termux with `cd ~/storage/downloads/JarvisSandbox/worker && bash run_termux.sh`. Generated assets are written to `~/storage/downloads/JARVIS_WORKSPACE`. No PC or cloud PC is required for the coordinator and procedural starter workers. A local GGUF inference server or optional remote API is required for general natural-language reasoning; deterministic scene recipes remain available without either model.
