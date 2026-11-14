@@ -73,7 +73,7 @@ fun ThreeDLabScreen(
                     Text("Worker connection", style = MaterialTheme.typography.titleMedium)
                 }
                 Text(connectionStatus, color = Color(0xFFB7C6D8))
-                OutlinedButton(onClick = onCheck, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onCheckWorker, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Text("  Test worker")
                 }

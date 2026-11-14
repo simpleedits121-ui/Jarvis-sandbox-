@@ -91,7 +91,7 @@ fun SandboxApp(workspace: File) {
         val file = selectedFile
         if (uri != null && file != null && file.isFile) {
             runCatching {
-                context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use(out::copyTo) }
+                context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { input -> input.copyTo(out) } }
                 output = "Exported: ${file.name}"
             }.onFailure { output = "Export failed: ${it.message}" }
         }
