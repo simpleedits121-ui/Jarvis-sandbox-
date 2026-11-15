@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 APP_ROOT = Path(os.environ.get("JARVIS_WORKSPACE", Path.home() / "storage" / "downloads" / "JARVIS_WORKSPACE")).resolve()
