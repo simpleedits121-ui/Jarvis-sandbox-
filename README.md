@@ -76,3 +76,8 @@ This is the first geometry milestone, not a finished cinematic character: it has
 - Added layered eye geometry, curved tapered hair locks, a layered skirt, garment accents, and more detailed hands/face parts.
 - Generates GLB, OBJ, MTL, and a JSON report entirely offline.
 - Still a procedural stylized model: no UV texture maps, skeleton/skin weights, or animation yet.
+
+
+## v0.7 Humanoid Rigging
+
+Character Forge exports a 17-joint humanoid skeleton and per-vertex skin weights in GLB. This milestone improves model usability and deformation support; it does not change the current character appearance or add animation clips yet. See `CHANGELOG_V0.7.md`.

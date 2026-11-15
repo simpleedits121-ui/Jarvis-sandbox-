@@ -180,16 +180,19 @@ def test_character_forge_rejects_unknown_preset():
     assert client.post("/api/v1/character/generate", json={"character": "unknown"}).status_code == 400
 
 
-def test_character_forge_v06_has_smooth_geometry_and_detail_parts():
+def test_character_forge_v07_exports_skinned_humanoid_glb():
     from pathlib import Path
     from jarvis_worker.character_forge import generate_character
-    target = Path(tmp) / "forge-v06-quality"
+    target = Path(tmp) / "forge-v07-rig-quality"
     report = generate_character(target)
-    assert report["generator"].endswith("v0.6 smooth procedural geometry")
+    assert report["generator"].endswith("v0.7 procedural humanoid rigging")
     assert report["parts"] >= 30
     assert report["vertices"] >= 15000
     assert report["triangles"] >= 25000
     assert report["materials"] >= 14
+    assert report["skeleton_joints"] == 17
+    assert report["skinned_mesh_parts"] == report["parts"]
+    assert report["animation_clips"] == 0
     assert "layered anime eyes with iris, pupils and highlights" in report["features"]
     assert "curved tapered hair locks and layered fringe" in report["features"]
     glb = (target / "jarvis_rem_character.glb").read_bytes()
@@ -201,3 +204,6 @@ def test_character_forge_v06_has_smooth_geometry_and_detail_parts():
     assert json_type == 0x4E4F534A
     assert len(document["meshes"]) >= 30
     assert all("NORMAL" in mesh["primitives"][0]["attributes"] for mesh in document["meshes"])
+    assert all("JOINTS_0" in mesh["primitives"][0]["attributes"] and "WEIGHTS_0" in mesh["primitives"][0]["attributes"] for mesh in document["meshes"])
+    assert len(document["skins"]) == 1
+    assert len(document["skins"][0]["joints"]) == 17

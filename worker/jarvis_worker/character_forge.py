@@ -176,6 +176,17 @@ def write_obj(parts,folder,stem):
  (folder/(stem+'.obj')).write_text('\n'.join(lines)+'\n')
  (folder/(stem+'.mtl')).write_text('\n'.join(mtl))
 
+# Joint positions are in the character's model-space rest pose.
+JOINTS = [
+ ("Hips",0,1.03,0), ("Spine",0,1.40,0), ("Chest",0,1.63,0),
+ ("Neck",0,1.82,0), ("Head",0,2.08,0),
+ ("LeftUpperArm",-.23,1.62,0), ("LeftForearm",-.34,1.39,.01), ("LeftHand",-.38,1.20,.02),
+ ("RightUpperArm",.23,1.62,0), ("RightForearm",.34,1.39,.01), ("RightHand",.38,1.20,.02),
+ ("LeftUpperLeg",-.13,1.00,0), ("LeftLowerLeg",-.13,.68,.005), ("LeftFoot",-.13,.49,.04),
+ ("RightUpperLeg",.13,1.00,0), ("RightLowerLeg",.13,.68,.005), ("RightFoot",.13,.49,.04)
+]
+JOINT_PARENTS = [None,0,1,2,3,2,5,6,2,8,9,0,11,12,0,14,15]
+
 def write_glb(parts,folder,stem):
  blob=bytearray();views=[];accessors=[];meshes=[];nodes=[];materials=[]
  def view(data,target):
@@ -206,9 +217,44 @@ def write_glb(parts,folder,stem):
   accessors.append({'bufferView':pv,'componentType':5126,'count':len(p.v),'type':'VEC3','min':[min(xs),min(ys),min(zs)],'max':[max(xs),max(ys),max(zs)]});pa=len(accessors)-1
   accessors.append({'bufferView':nv,'componentType':5126,'count':len(p.v),'type':'VEC3'});na=len(accessors)-1
   accessors.append({'bufferView':iv,'componentType':5125,'count':len(idx),'type':'SCALAR'});ia=len(accessors)-1
-  meshes.append({'name':p.name,'primitives':[{'attributes':{'POSITION':pa,'NORMAL':na},'indices':ia,'material':mi[p.material]}]})
-  nodes.append({'name':p.name,'mesh':len(meshes)-1})
- doc={'asset':{'version':'2.0','generator':'JARVIS Character Forge v0.6 Offline'},'scene':0,'scenes':[{'nodes':list(range(len(nodes)))}],'nodes':nodes,'meshes':meshes,'materials':materials,'buffers':[{'byteLength':len(blob)}],'bufferViews':views,'accessors':accessors}
+  # Two-bone smooth skinning weights, computed from each vertex's position.
+  joints=[];weights=[]
+  for vx,vy,vz in p.v:
+   scored=[]
+   for ji,(jn,jx,jy,jz) in enumerate(JOINTS):
+    # Height and lateral distance guide the influence; depth keeps front/back surfaces together.
+    d=((vx-jx)*1.0)**2+((vy-jy)*1.15)**2+((vz-jz)*0.55)**2
+    scored.append((d,ji))
+   scored.sort();a,b=scored[0],scored[1]
+   wa=1.0/(math.sqrt(a[0])+0.025);wb=1.0/(math.sqrt(b[0])+0.025);total=wa+wb
+   joints.extend((a[1],b[1],0,0));weights.extend((wa/total,wb/total,0.0,0.0))
+  jv=view(struct.pack('<%sH'%len(joints),*joints),34962)
+  wv=view(struct.pack('<%sf'%len(weights),*weights),34962)
+  accessors.append({'bufferView':jv,'componentType':5123,'count':len(p.v),'type':'VEC4'});ja=len(accessors)-1
+  accessors.append({'bufferView':wv,'componentType':5126,'count':len(p.v),'type':'VEC4'});wa=len(accessors)-1
+  meshes.append({'name':p.name,'primitives':[{'attributes':{'POSITION':pa,'NORMAL':na,'JOINTS_0':ja,'WEIGHTS_0':wa},'indices':ia,'material':mi[p.material]}]})
+  nodes.append({'name':p.name,'mesh':len(meshes)-1,'skin':0})
+ # Humanoid skeleton: translations are joint rest positions in model space.
+ skeleton_start=len(nodes)
+ joint_nodes=[]
+ for ji,(jn,jx,jy,jz) in enumerate(JOINTS):
+  parent=JOINT_PARENTS[ji]
+  if parent is None: local=[jx,jy,jz]
+  else:
+   _,px,py,pz=JOINTS[parent];local=[jx-px,jy-py,jz-pz]
+  node={'name':jn,'translation':local}
+  children=[k for k,x in enumerate(JOINT_PARENTS) if x==ji]
+  if children: node['children']=[skeleton_start+k for k in children]
+  joint_nodes.append(node)
+ nodes.extend(joint_nodes)
+ # Inverse bind matrices are inverse rest translations (column-major).
+ ibm=[]
+ for _,jx,jy,jz in JOINTS:
+  ibm.extend((1,0,0,0, 0,1,0,0, 0,0,1,0, -jx,-jy,-jz,1))
+ ibv=view(struct.pack('<%sf'%len(ibm),*ibm),None)
+ accessors.append({'bufferView':ibv,'componentType':5126,'count':len(JOINTS),'type':'MAT4'});ibma=len(accessors)-1
+ skin={'name':'JARVIS_Humanoid_Rig','inverseBindMatrices':ibma,'skeleton':skeleton_start,'joints':[skeleton_start+i for i in range(len(JOINTS))]}
+ doc={'asset':{'version':'2.0','generator':'JARVIS Character Forge v0.7 Offline Rigging'},'scene':0,'scenes':[{'nodes':list(range(len(meshes)))+[skeleton_start]}],'nodes':nodes,'meshes':meshes,'skins':[skin],'materials':materials,'buffers':[{'byteLength':len(blob)}],'bufferViews':views,'accessors':accessors}
  js=json.dumps(doc,separators=(',',':')).encode()
  while len(js)%4:js+=b' '
  while len(blob)%4:blob.append(0)
@@ -219,5 +265,5 @@ def generate_character(output_dir:Path,character:str='rem-inspired')->dict:
  output_dir.mkdir(parents=True,exist_ok=True);stem='jarvis_rem_character';parts=make_character()
  write_obj(parts,output_dir,stem);write_glb(parts,output_dir,stem)
  tris=sum(len(p.f) for p in parts);verts=sum(len(p.v) for p in parts)
- report={'name':'Original blue-haired maid anime character','generator':'JARVIS Character Forge v0.6 smooth procedural geometry','character':character,'parts':len(parts),'vertices':verts,'triangles':tris,'materials':len(PALETTE),'files':[stem+'.glb',stem+'.obj',stem+'.mtl',stem+'_report.json'],'features':['smooth indexed mesh normals','layered anime eyes with iris, pupils and highlights','curved tapered hair locks and layered fringe','flared layered skirt with hem and pleat seams','separate clothing, accessories, limbs and facial features'],'limitations':['Procedural stylized model; not a direct reconstruction of a copyrighted character','No UV texture maps yet; uses PBR palette materials','No skeleton, skin weights or animation yet','Facial detail and garment folds remain stylized and need further refinement']}
+ report={'name':'Original blue-haired maid anime character','generator':'JARVIS Character Forge v0.7 procedural humanoid rigging','character':character,'parts':len(parts),'vertices':verts,'triangles':tris,'materials':len(PALETTE),'skeleton_joints':len(JOINTS),'skinned_mesh_parts':len(parts),'animation_clips':0,'files':[stem+'.glb',stem+'.obj',stem+'.mtl',stem+'_report.json'],'features':['smooth indexed mesh normals','layered anime eyes with iris, pupils and highlights','curved tapered hair locks and layered fringe','flared layered skirt with hem and pleat seams','separate clothing, accessories, limbs and facial features','17-joint humanoid skeleton','two-influence vertex skin weights on generated mesh parts','inverse bind matrices and GLB skin definition'],'limitations':['Procedural stylized model; not a direct reconstruction of a copyrighted character','No UV texture maps yet; uses PBR palette materials','Humanoid skeleton and skin weights included; animation clips are the next milestone','Facial detail and garment folds remain stylized and need further refinement']}
  (output_dir/(stem+'_report.json')).write_text(json.dumps(report,indent=2));return report
