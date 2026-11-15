@@ -106,7 +106,7 @@ fun SandboxApp(workspace: File) {
                     title = {
                         Column {
                             Text("JARVIS SANDBOX", fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                            Text("LOCAL WORKSPACE  •  SWARM v0.3", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp)
+                            Text("LOCAL WORKSPACE  •  SWARM v0.4", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Bg),
@@ -115,7 +115,7 @@ fun SandboxApp(workspace: File) {
             },
             bottomBar = {
                 NavigationBar(containerColor = Panel) {
-                    listOf("Home", "Files", "Terminal", "Agent", "Bridge", "3D Lab").forEach { item ->
+                    listOf("Home", "Files", "Terminal", "Agent", "Swarm", "Bridge", "3D Lab").forEach { item ->
                         NavigationBarItem(
                             selected = page == item,
                             onClick = { page = item },
@@ -126,6 +126,7 @@ fun SandboxApp(workspace: File) {
                                     "Terminal" -> Icons.Default.Terminal
                                     "Agent" -> Icons.Default.Psychology
                                     "Bridge" -> Icons.Default.ViewInAr
+                                    "Swarm" -> Icons.Default.Groups
                                     else -> Icons.Default.Polymer
                                 }, contentDescription = item)
                             },
@@ -156,6 +157,7 @@ fun SandboxApp(workspace: File) {
                         refresh++
                     })
                     "Agent" -> AgentScreen(workerUrl = workerUrl, workerToken = workerToken)
+                    "Swarm" -> SwarmDashboard(workerUrl = workerUrl, workerToken = workerToken)
                     "Bridge" -> BridgeScreen(onImport = { importLauncher.launch(arrayOf("*/*")) })
                     "3D Lab" -> ThreeDLabScreen(
                         workerUrl = workerUrl,

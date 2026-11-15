@@ -41,6 +41,25 @@ The script registers the shared-storage path as a safe Git directory, configures
 
 ## JARVIS Swarm v0.3 (local-first AI operator)
 
-The Agent tab now connects to the Termux worker API. It supports local-first / remote-fallback model routing, a safe tool allow-list, an approval queue for destructive operations, and CPU-first procedural scene workers. See `worker/README.md` for Android setup and model configuration.
+The Agent tab now connects to the Termux worker API. It supports local-only model routing, a safe tool allow-list, an approval queue for destructive operations, and CPU-first procedural scene workers. See `worker/README.md` for Android setup and model configuration.
 
-Start the worker from Termux with `cd ~/storage/downloads/JarvisSandbox/worker && bash run_termux.sh`. Generated assets are written to `~/storage/downloads/JARVIS_WORKSPACE`. No PC or cloud PC is required for the coordinator and procedural starter workers. A local GGUF inference server or optional remote API is required for general natural-language reasoning; deterministic scene recipes remain available without either model.
+Start the worker from Termux with `cd ~/storage/downloads/JarvisSandbox/worker && bash run_termux.sh`. Generated assets are written to `~/storage/downloads/JARVIS_WORKSPACE`. No PC or cloud PC is required for the coordinator and procedural starter workers. A local GGUF inference server is required for general natural-language reasoning; deterministic scene recipes remain available without either model.
+
+## JARVIS Swarm v0.4 status
+The Swarm API is available at `/api/v1/swarm/agents` and `/api/v1/swarm/tasks`. It persists task plans, agent reports, messages and bounded per-agent memory under `JARVIS_WORKSPACE/swarm`. This release is an offline coordination foundation: it does not yet provide neural agent reasoning, image understanding, autonomous mesh generation, or live control of the Android Blender app. A local model runtime and a supported Blender bridge are later milestones.
+
+## Local-only privacy mode
+Remote LLM fallback and external image-to-3D provider calls are disabled in this build. The local model endpoint defaults to `http://127.0.0.1:8080/v1`. If no local model is running, the worker uses deterministic responses and records that reasoning is unavailable.
+\nThe v0.4 Swarm endpoints are backend-ready but are not yet exposed as a dedicated Android screen. The existing AgentConsole remains the v0.3 chat/approval interface; the next Android milestone is a Swarm dashboard for agents, tasks, messages and memory.\n
+## JARVIS Swarm Dashboard (v0.4)
+
+The Android app now includes a **Swarm** tab alongside the existing Agent console. It connects to the local Termux worker endpoints:
+
+- `GET /api/v1/swarm/agents` — list the registered agents
+- `GET /api/v1/swarm/tasks` — view the task board
+- `POST /api/v1/swarm/tasks` — create a coordinated task
+- `POST /api/v1/swarm/tasks/{task_id}/run` — run the offline coordination pass
+
+The dashboard shows each agent's role, task status and the coordinator's report. This is an offline task-coordination prototype, not autonomous neural reasoning: local GGUF inference, image understanding, Blender scene telemetry and actual mesh/rig generation remain future integrations. Cloud model fallback controls have been removed from the Android Agent screen; configure only a local OpenAI-compatible GGUF server.
+
+Android app version: **0.4.0** (versionCode 3).

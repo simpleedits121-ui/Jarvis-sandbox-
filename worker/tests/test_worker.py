@@ -40,10 +40,10 @@ def test_agent_config_does_not_return_api_key():
         "remote_api_key": "test-secret-key",
     })
     assert response.status_code == 200
-    assert response.json()["remote_configured"] is True
+    assert response.json()["remote_configured"] is False
     fetched = client.get("/api/v1/agent/config")
     assert fetched.status_code == 200
-    assert fetched.json()["remote_key_set"] is True
+    assert fetched.json()["remote_key_set"] is False
     assert "test-secret-key" not in fetched.text
 
 
@@ -82,7 +82,7 @@ def test_destructive_action_waits_for_approval():
     assert target.exists()
 
 
-def test_local_model_failure_falls_back_to_remote(monkeypatch):
+def test_local_model_failure_never_calls_remote(monkeypatch):
     import asyncio
     from jarvis_worker import agent
     root = __import__("jarvis_worker.main", fromlist=["APP_ROOT"]).APP_ROOT
@@ -99,9 +99,9 @@ def test_local_model_failure_falls_back_to_remote(monkeypatch):
         return '{"reply":"Remote fallback answered","actions":[]}'
     monkeypatch.setattr(agent, "call_model", fake_call)
     result = asyncio.run(agent.handle_chat(root, agent.AgentChatRequest(message="Hello JARVIS")))
-    assert calls == ["local", "remote"]
-    assert result["provider"] == "remote"
-    assert result["reply"] == "Remote fallback answered"
+    assert calls == ["local"]
+    assert result.get("provider") != "remote"
+    assert "local" in " ".join(result.get("worker_trace", [])).lower() or result.get("reply")
 
 
 def test_approved_delete_executes_only_after_approval():
@@ -129,3 +129,33 @@ def test_agent_secret_file_is_not_readable_through_workspace_tools():
         assert False, "private settings should be blocked"
     except HTTPException as exc:
         assert exc.status_code == 403
+
+
+
+def test_swarm_api_coordinates_agents_offline():
+    created = client.post("/api/v1/swarm/tasks", json={"goal": "Design an anime character with a rig"})
+    assert created.status_code == 200
+    task = created.json()
+    assert task["execution_mode"] == "offline_coordination"
+    assert task["reasoning_available"] is False
+    assert any(item["agent_id"] == "rigging" for item in task["subtasks"])
+    ran = client.post(f"/api/v1/swarm/tasks/{task['task_id']}/run")
+    assert ran.status_code == 200
+    result = ran.json()
+    assert result["status"] == "review"
+    assert result["review"]["status"] == "needs_local_model_review"
+    assert client.get(f"/api/v1/swarm/tasks/{task['task_id']}/messages").status_code == 200
+
+
+def test_swarm_rejects_invalid_task_and_unknown_task():
+    assert client.post("/api/v1/swarm/tasks", json={"goal": "x"}).status_code == 422
+    assert client.get("/api/v1/swarm/tasks/not-a-real-id").status_code == 404
+
+
+def test_swarm_agent_memory_is_available_after_run():
+    created = client.post("/api/v1/swarm/tasks", json={"goal": "Plan character geometry"})
+    task_id = created.json()["task_id"]
+    client.post(f"/api/v1/swarm/tasks/{task_id}/run")
+    memory = client.get("/api/v1/swarm/agents/geometry/memory")
+    assert memory.status_code == 200
+    assert memory.json()["entries"]

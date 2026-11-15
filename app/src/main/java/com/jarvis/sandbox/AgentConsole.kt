@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
@@ -35,16 +34,12 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     var localBase by remember { mutableStateOf("http://127.0.0.1:8080/v1") }
     var localModel by remember { mutableStateOf("") }
-    var remoteBase by remember { mutableStateOf("https://api.openai.com/v1") }
-    var remoteModel by remember { mutableStateOf("gpt-4o-mini") }
-    var remoteKey by remember { mutableStateOf("") }
-    var keyAlreadySet by remember { mutableStateOf(false) }
     var configOpen by remember { mutableStateOf(true) }
     var configStatus by remember { mutableStateOf("Worker not checked. Start the Termux worker first.") }
     var busy by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var provider by remember { mutableStateOf("No model selected") }
-    var trace by remember { mutableStateOf("Local-first routing: local GGUF endpoint → remote API fallback → deterministic CPU workers.") }
+    var trace by remember { mutableStateOf("Local-only routing: local GGUF endpoint → deterministic CPU workers. No cloud fallback.") }
     val messages = remember { mutableStateListOf<AgentChatLine>() }
     val approvals = remember { mutableStateListOf<AgentApproval>() }
 
@@ -77,10 +72,7 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
                 result.onSuccess { json ->
                     localBase = json.optString("local_base_url", localBase)
                     localModel = json.optString("local_model", localModel)
-                    remoteBase = json.optString("remote_base_url", remoteBase)
-                    remoteModel = json.optString("remote_model", remoteModel)
-                    keyAlreadySet = json.optBoolean("remote_key_set", false)
-                    configStatus = "Connected to worker • ${json.optString("strategy", "local-first fallback")}" 
+                    configStatus = "Connected • ${json.optString("strategy", "local-only")}" 
                 }.onFailure { configStatus = "Worker unavailable: ${it.message}" }
                 busy = false
             }
@@ -94,22 +86,14 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
         val token = workerToken
         val localUrl = localBase
         val localId = localModel
-        val remoteUrl = remoteBase
-        val remoteId = remoteModel
-        val secret = remoteKey
         thread {
             val body = JSONObject()
                 .put("local_base_url", localUrl)
                 .put("local_model", localId)
-                .put("remote_base_url", remoteUrl)
-                .put("remote_model", remoteId)
-            if (secret.isNotBlank()) body.put("remote_api_key", secret)
             val result = runCatching { agentHttp(base, "/api/v1/agent/config", token, "POST", body) }
             mainHandler.post {
                 result.onSuccess { json ->
-                    keyAlreadySet = json.optBoolean("remote_key_set", false)
-                    remoteKey = ""
-                    configStatus = "Saved securely in the local Termux worker • local-first, remote fallback"
+                    configStatus = "Saved local GGUF settings on this device • no cloud fallback"
                 }.onFailure { configStatus = "Save failed: ${it.message}" }
                 busy = false
             }
@@ -191,7 +175,7 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("JARVIS SWARM", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("AI Director • Local workers • Approval-controlled tools", color = Color(0xFF91A4BC), fontSize = 12.sp)
+        Text("Local AI Director • Offline workers • Approval-controlled tools", color = Color(0xFF91A4BC), fontSize = 12.sp)
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF14283B)), shape = RoundedCornerShape(14.dp)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -199,7 +183,7 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
                     Spacer(Modifier.width(8.dp))
                     Text("LOCAL-FIRST ROUTER", fontWeight = FontWeight.Bold, color = Color(0xFF55D6FF))
                 }
-                Text("1. Local GGUF model  →  2. Remote model fallback  →  3. Built-in CPU workers", color = Color(0xFFD3E3F0), fontSize = 12.sp)
+                Text("Local GGUF model → built-in CPU workers. Remote services are disabled.", color = Color(0xFFD3E3F0), fontSize = 12.sp)
                 Text(configStatus, color = Color(0xFFB7C6D8), fontSize = 11.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { loadConfig() }, enabled = !busy) {
@@ -216,13 +200,8 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
                     Text("LOCAL MODEL (GGUF SERVER)", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     OutlinedTextField(localBase, { localBase = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Local OpenAI-compatible URL") }, singleLine = true)
                     OutlinedTextField(localModel, { localModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Local model ID") }, supportingText = { Text("Example: the model name reported by your llama.cpp server") }, singleLine = true)
-                    Divider(color = Color(0xFF26384B))
-                    Text("REMOTE FALLBACK (OPTIONAL)", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                    OutlinedTextField(remoteBase, { remoteBase = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Remote OpenAI-compatible URL") }, singleLine = true)
-                    OutlinedTextField(remoteModel, { remoteModel = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Remote model ID") }, singleLine = true)
-                    OutlinedTextField(remoteKey, { remoteKey = it }, modifier = Modifier.fillMaxWidth(), label = { Text(if (keyAlreadySet) "API key (saved; enter to replace)" else "Remote API key") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-                    Text("The key is stored only in the local Termux worker settings file with owner-only permissions. Do not expose the worker to the internet.", color = Color(0xFF91A4BC), fontSize = 10.sp)
-                    Button(onClick = { saveConfig() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Save model connections") }
+                    Text("100% local mode: this app does not send prompts or files to cloud AI services.", color = Color(0xFF91A4BC), fontSize = 10.sp)
+                    Button(onClick = { saveConfig() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Save local model settings") }
                 }
             }
         }
@@ -283,7 +262,7 @@ fun AgentScreen(workerUrl: String, workerToken: String) {
     }
 }
 
-private fun agentHttp(
+internal fun agentHttp(
     baseUrl: String,
     path: String,
     token: String,

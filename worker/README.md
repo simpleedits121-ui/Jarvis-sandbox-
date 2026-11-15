@@ -66,3 +66,5 @@ The OBJ preview is a lightweight blockout mesh; the Blender Python script uses t
 ## API
 
 With the worker running, open `http://127.0.0.1:8765/docs` in a browser on the phone.
+
+\n## Local-only mode (v0.4)\nRemote model fallback and external image-to-3D provider calls are disabled. Configure only a local OpenAI-compatible GGUF server. With no local model configured, deterministic workers and the Swarm coordination API remain available; they do not provide neural reasoning or actual Blender UI control.\n\n## Swarm API\n- `GET /api/v1/swarm/agents`\n- `POST /api/v1/swarm/tasks` with `{"goal":"..."}`\n- `GET /api/v1/swarm/tasks`\n- `GET /api/v1/swarm/tasks/{task_id}`\n- `POST /api/v1/swarm/tasks/{task_id}/run`\n- `GET /api/v1/swarm/tasks/{task_id}/messages`\n- `GET /api/v1/swarm/agents/{agent_id}/memory`\n

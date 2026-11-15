@@ -24,13 +24,13 @@ for folder in (APP_ROOT, UPLOADS, OUTPUTS, JOBS):
 HOST = os.environ.get("JARVIS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("JARVIS_PORT", "8765"))
 ACCESS_TOKEN = os.environ.get("JARVIS_ACCESS_TOKEN", "")
-THREED_PROVIDER_URL = os.environ.get("JARVIS_3D_PROVIDER_URL", "").rstrip("/")
+THREED_PROVIDER_URL = ""  # Local-only build: external image-to-3D providers are disabled.
 THREED_PROVIDER_TOKEN = os.environ.get("JARVIS_3D_PROVIDER_TOKEN", "")
 LLM_BASE_URL = os.environ.get("JARVIS_LLM_BASE_URL", "").rstrip("/")
 LLM_API_KEY = os.environ.get("JARVIS_LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("JARVIS_LLM_MODEL", "")
 
-app = FastAPI(title="JARVIS Sandbox Worker", version="0.3.0")
+app = FastAPI(title="JARVIS Sandbox Worker", version="0.4.0")
 agent_tasks: dict[str, dict[str, Any]] = {}
 three_d_jobs: dict[str, dict[str, Any]] = {}
 for saved_job in JOBS.glob("3d-*.json"):
@@ -353,6 +353,63 @@ def decide_agent_approval(approval_id: str, req: ApprovalRequest,
         row["result"] = result
     path.write_text(json.dumps(row, indent=2), encoding="utf-8")
     return row
+
+# --- JARVIS Swarm v0.4: offline coordination API ---
+from .swarm import SwarmRuntime
+
+class SwarmTaskRequest(BaseModel):
+    goal: str = Field(min_length=3, max_length=4000)
+
+SWARM = SwarmRuntime(APP_ROOT)
+
+@app.get("/api/v1/swarm/agents")
+def swarm_agents(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {"agents": SWARM.agents(), "mode": "offline_coordination"}
+
+@app.post("/api/v1/swarm/tasks")
+def swarm_create_task(req: SwarmTaskRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try:
+        return SWARM.create_task(req.goal)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+@app.get("/api/v1/swarm/tasks")
+def swarm_list_tasks(limit: int = 50, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {"tasks": SWARM.list_tasks(limit)}
+
+@app.get("/api/v1/swarm/tasks/{task_id}")
+def swarm_get_task(task_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    task = SWARM.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "Swarm task not found.")
+    return task
+
+@app.post("/api/v1/swarm/tasks/{task_id}/run")
+def swarm_run_task(task_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try:
+        return SWARM.run_task(task_id)
+    except KeyError:
+        raise HTTPException(404, "Swarm task not found.")
+
+@app.get("/api/v1/swarm/tasks/{task_id}/messages")
+def swarm_task_messages(task_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not SWARM.get_task(task_id):
+        raise HTTPException(404, "Swarm task not found.")
+    return {"messages": SWARM.messages(task_id)}
+
+@app.get("/api/v1/swarm/agents/{agent_id}/memory")
+def swarm_agent_memory(agent_id: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try:
+        return SWARM.memory(agent_id)
+    except KeyError:
+        raise HTTPException(404, "Swarm agent not found.")
 
 @app.get("/api/v1/blender/status")
 def blender_runtime_status(authorization: str | None = Header(default=None)):

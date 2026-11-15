@@ -65,17 +65,28 @@ def load_config(root: Path) -> dict[str, str]:
     }
     try:
         saved = json.loads(config_path(root).read_text(encoding="utf-8"))
-        for key in defaults:
+        for key in ("local_base_url", "local_model"):
             if key in saved:
                 defaults[key] = str(saved[key])
     except (OSError, ValueError, TypeError):
         pass
+    # Never load a saved remote key in the local-only distribution.
+    defaults["remote_base_url"] = ""
+    defaults["remote_model"] = ""
+    defaults["remote_api_key"] = ""
     return defaults
 
 
 def save_config(root: Path, config: dict[str, str]) -> None:
     path = config_path(root)
-    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    local_only = {
+        "local_base_url": str(config.get("local_base_url", "")),
+        "local_model": str(config.get("local_model", "")),
+        "remote_base_url": "",
+        "remote_model": "",
+        "remote_api_key": "",
+    }
+    path.write_text(json.dumps(local_only, indent=2), encoding="utf-8")
     try:
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
@@ -86,12 +97,12 @@ def public_config(config: dict[str, str]) -> dict[str, Any]:
     return {
         "local_base_url": config["local_base_url"],
         "local_model": config["local_model"],
-        "remote_base_url": config["remote_base_url"],
-        "remote_model": config["remote_model"],
+        "remote_base_url": "",
+        "remote_model": "",
         "local_configured": bool(config["local_base_url"] and config["local_model"]),
-        "remote_configured": bool(config["remote_base_url"] and config["remote_model"] and config["remote_api_key"]),
-        "remote_key_set": bool(config["remote_api_key"]),
-        "strategy": "local-first, remote fallback",
+        "remote_configured": False,
+        "remote_key_set": False,
+        "strategy": "local-only; deterministic fallback when no local model is configured",
     }
 
 
@@ -276,8 +287,8 @@ async def handle_chat(root: Path, request: AgentChatRequest) -> dict[str, Any]:
     providers = []
     if config["local_base_url"] and config["local_model"]:
         providers.append(("local", config["local_base_url"], config["local_model"], ""))
-    if config["remote_base_url"] and config["remote_model"] and config["remote_api_key"]:
-        providers.append(("remote", config["remote_base_url"], config["remote_model"], config["remote_api_key"]))
+    # JARVIS Sandbox is configured for local-only operation. Remote settings are
+    # retained only for backwards-compatible config parsing and are never called.
 
     errors = []
     for provider, base, model, key in providers:
