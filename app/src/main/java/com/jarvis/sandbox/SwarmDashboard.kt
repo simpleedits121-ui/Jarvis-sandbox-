@@ -33,7 +33,7 @@ fun SwarmDashboard(workerUrl: String, workerToken: String) {
     var busy by remember { mutableStateOf(false) }
     var selectedTask by remember { mutableStateOf<SwarmTaskUi?>(null) }
     var taskDetail by remember { mutableStateOf("") }
-    var forgeStatus by remember { mutableStateOf("Generate a first offline Rem-inspired character blockout.") }
+    var forgeStatus by remember { mutableStateOf("Generate the v0.6 smooth-mesh anime character build locally.") }
     var forgeUrl by remember { mutableStateOf("") }
     val context = LocalContext.current
 
@@ -84,7 +84,7 @@ fun SwarmDashboard(workerUrl: String, workerToken: String) {
                         if (item.optString("filename").endsWith(".glb")) glbPath = item.optString("download")
                     }
                     forgeUrl = glbPath
-                    forgeStatus = "Generated ${report?.optInt("parts") ?: 0} mesh parts • ${report?.optInt("triangles") ?: 0} triangles. Starter blockout only; textures, rig and animation are next."
+                    forgeStatus = "Generated ${report?.optInt("parts") ?: 0} mesh parts • ${report?.optInt("triangles") ?: 0} triangles. v0.6 smooth geometry • UV textures, rigging and animation are next."
                     status = "Character Forge generated a local GLB asset"
                 }.onFailure { forgeStatus = "Generation failed: ${it.message}" }
                 busy = false
@@ -125,13 +125,13 @@ fun SwarmDashboard(workerUrl: String, workerToken: String) {
             Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("LOCAL STATUS", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 Text(status, color = Color.White, fontSize = 12.sp)
-                Text("Swarm coordination works offline. Character Forge now creates a procedural 3D starter mesh; neural reasoning, detailed textures and rigging are still pending.", color = Color(0xFFB7C6D8), fontSize = 10.sp)
+                Text("Swarm coordination works offline. Character Forge v0.6 creates smoother indexed meshes with layered eyes and curved hair. Neural reasoning, UV textures, rigging and animation are still pending.", color = Color(0xFFB7C6D8), fontSize = 10.sp)
             }
         }
         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF14283B)), shape = RoundedCornerShape(14.dp)) {
             Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("CHARACTER FORGE • FIRST REM-INSPIRED BUILD", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                Text("Generate a real local 3D starter asset from scratch. No cloud model or paid API.", color = Color.White, fontSize = 12.sp)
+                Text("Generate a smoother anime-style character mesh locally from scratch. No cloud model or paid API.", color = Color.White, fontSize = 12.sp)
                 Text(forgeStatus, color = Color(0xFFB7C6D8), fontSize = 11.sp)
                 Button(onClick = { generateRem() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.RocketLaunch, null); Spacer(Modifier.width(7.dp)); Text("Generate Rem Character")

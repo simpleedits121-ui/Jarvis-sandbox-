@@ -69,3 +69,10 @@ Android app version: **0.4.0** (versionCode 3).
 The Swarm screen includes **Generate Rem Character**. It calls `POST /api/v1/character/generate` and creates a local GLB plus OBJ/MTL and a report under `JARVIS_WORKSPACE/outputs/`. The GLB is a deterministic, multi-part procedural anime-maid blockout with named mesh parts and palette materials. It does not call a cloud service or require a GGUF model.
 
 This is the first geometry milestone, not a finished cinematic character: it has no UV unwrap, texture maps, production topology, skeleton, skin weights or animation. Those are subsequent Forge milestones. Download the GLB using the link returned by the endpoint or the dashboard's **Open / download GLB** action.
+
+
+## Character Forge v0.6
+- Replaced the flat-shaded low-poly starter generator with smooth indexed geometry and averaged vertex normals.
+- Added layered eye geometry, curved tapered hair locks, a layered skirt, garment accents, and more detailed hands/face parts.
+- Generates GLB, OBJ, MTL, and a JSON report entirely offline.
+- Still a procedural stylized model: no UV texture maps, skeleton/skin weights, or animation yet.

@@ -1,174 +1,223 @@
-"""Offline procedural anime maid character generator. No network/model required.
-Creates a stylized, editable GLB + OBJ/MTL starter asset (not a production rig).
+"""JARVIS Character Forge v0.6: smoother parametric anime character blockout.
+Offline procedural geometry; intentionally an original Rem-inspired design, not a franchise asset.
 """
 from __future__ import annotations
 import json, math, struct
 from pathlib import Path
-from typing import Iterable
 
-# RGBA linear-ish palette inspired by a blue-haired fantasy maid; not an exact franchise model.
 PALETTE = {
-    "skin": (0.93, 0.70, 0.58, 1), "hair": (0.12, 0.48, 0.78, 1),
-    "hair_light": (0.28, 0.68, 0.91, 1), "dress": (0.10, 0.15, 0.28, 1),
-    "white": (0.91, 0.94, 1.0, 1), "blue": (0.12, 0.48, 0.83, 1),
-    "gold": (0.95, 0.68, 0.20, 1), "eye": (0.08, 0.48, 0.84, 1),
-    "black": (0.025, 0.035, 0.06, 1), "shoe": (0.045, 0.06, 0.11, 1),
-    "pink": (0.95, 0.48, 0.62, 1),
+ "skin":(0.96,0.76,0.66,1),"skin_shadow":(0.72,0.43,0.36,1),
+ "hair":(0.12,0.48,0.78,1),"hair_light":(0.30,0.70,0.92,1),
+ "hair_dark":(0.055,0.25,0.48,1),"dress":(0.075,0.12,0.23,1),
+ "blue":(0.12,0.48,0.83,1),"white":(0.94,0.97,1,1),
+ "eye":(0.04,0.42,0.83,1),"iris_light":(0.18,0.72,0.98,1),
+ "black":(0.025,0.035,0.06,1),"shoe":(0.035,0.055,0.10,1),
+ "gold":(0.96,0.68,0.20,1),"pink":(0.92,0.38,0.52,1),
+ "mouth":(0.42,0.12,0.18,1)
 }
 class Part:
-    def __init__(self, name, material): self.name=name; self.material=material; self.v=[]; self.f=[]
-    def tri(self,a,b,c): self.f.append((a,b,c))
+ def __init__(self,name,material): self.name=name;self.material=material;self.v=[];self.f=[]
+ def tri(self,a,b,c): self.f.append((a,b,c))
 
-def sphere(p, center, scale, seg=16, rings=10):
-    base=len(p.v)
-    for j in range(rings+1):
-        phi=math.pi*j/rings
-        for i in range(seg):
-            th=2*math.pi*i/seg
-            p.v.append((center[0]+scale[0]*math.sin(phi)*math.cos(th), center[1]+scale[1]*math.cos(phi), center[2]+scale[2]*math.sin(phi)*math.sin(th)))
-    for j in range(rings):
-        for i in range(seg):
-            a=base+j*seg+i; b=base+j*seg+(i+1)%seg; c=base+(j+1)*seg+(i+1)%seg; d=base+(j+1)*seg+i
-            p.tri(a,b,d); p.tri(b,c,d)
+def ellipsoid(p,c,s,seg=32,rings=20):
+ base=len(p.v)
+ for j in range(rings+1):
+  ph=math.pi*j/rings
+  for i in range(seg):
+   th=2*math.pi*i/seg
+   p.v.append((c[0]+s[0]*math.sin(ph)*math.cos(th),c[1]+s[1]*math.cos(ph),c[2]+s[2]*math.sin(ph)*math.sin(th)))
+ for j in range(rings):
+  for i in range(seg):
+   a=base+j*seg+i;b=base+j*seg+(i+1)%seg;c1=base+(j+1)*seg+(i+1)%seg;d=base+(j+1)*seg+i
+   p.tri(a,d,b);p.tri(b,d,c1)
 
-def cylinder_between(p, a, b, r1, r2=None, sides=12):
-    if r2 is None:r2=r1
-    ax,ay,az=a; bx,by,bz=b; dx=bx-ax;dy=by-ay;dz=bz-az
-    length=math.sqrt(dx*dx+dy*dy+dz*dz) or 1
-    ux,uy,uz=dx/length,dy/length,dz/length
-    # stable perpendicular basis
-    ref=(0,1,0) if abs(uy)<0.9 else (1,0,0)
-    vx=uy*ref[2]-uz*ref[1]; vy=uz*ref[0]-ux*ref[2]; vz=ux*ref[1]-uy*ref[0]
-    vl=math.sqrt(vx*vx+vy*vy+vz*vz) or 1; vx/=vl;vy/=vl;vz/=vl
-    wx=uy*vz-uz*vy; wy=uz*vx-ux*vz; wz=ux*vy-uy*vx
-    base=len(p.v)
-    for point,r in ((a,r1),(b,r2)):
-        for i in range(sides):
-            t=2*math.pi*i/sides
-            p.v.append((point[0]+r*(vx*math.cos(t)+wx*math.sin(t)),point[1]+r*(vy*math.cos(t)+wy*math.sin(t)),point[2]+r*(vz*math.cos(t)+wz*math.sin(t))))
-    for i in range(sides):
-        n=(i+1)%sides; p.tri(base+i,base+n,base+sides+i);p.tri(base+n,base+sides+n,base+sides+i)
-    p.v.extend([a,b]); ca=len(p.v)-2; cb=ca+1
-    for i in range(sides):
-        n=(i+1)%sides;p.tri(ca,base+n,base+i);p.tri(cb,base+sides+i,base+sides+n)
+def tube(p,points,radii,sides=12):
+ """Smooth swept tube through a polyline, with a stable local frame."""
+ pts=[tuple(map(float,q)) for q in points]
+ if len(pts)<2:return
+ base=len(p.v)
+ for k,pt in enumerate(pts):
+  prev=pts[max(0,k-1)];nxt=pts[min(len(pts)-1,k+1)]
+  t=[nxt[i]-prev[i] for i in range(3)];ln=math.sqrt(sum(v*v for v in t)) or 1;t=[v/ln for v in t]
+  ref=(0,0,1) if abs(t[2])<.88 else (0,1,0)
+  u=[t[1]*ref[2]-t[2]*ref[1],t[2]*ref[0]-t[0]*ref[2],t[0]*ref[1]-t[1]*ref[0]]
+  ul=math.sqrt(sum(v*v for v in u)) or 1;u=[v/ul for v in u]
+  v=[t[1]*u[2]-t[2]*u[1],t[2]*u[0]-t[0]*u[2],t[0]*u[1]-t[1]*u[0]]
+  r=radii[k] if isinstance(radii,(list,tuple)) else radii
+  for i in range(sides):
+   a=2*math.pi*i/sides
+   p.v.append(tuple(pt[q]+r*(u[q]*math.cos(a)+v[q]*math.sin(a)) for q in range(3)))
+ for k in range(len(pts)-1):
+  for i in range(sides):
+   a=base+k*sides+i;b=base+k*sides+(i+1)%sides;c=base+(k+1)*sides+(i+1)%sides;d=base+(k+1)*sides+i
+   p.tri(a,b,d);p.tri(b,c,d)
+
+def ring_surface(p, rings, sides=48, thickness=False):
+ base=len(p.v)
+ for y,rx,rz in rings:
+  for i in range(sides):
+   a=2*math.pi*i/sides;p.v.append((rx*math.cos(a),y,rz*math.sin(a)))
+ for j in range(len(rings)-1):
+  for i in range(sides):
+   a=base+j*sides+i;b=base+j*sides+(i+1)%sides;c=base+(j+1)*sides+(i+1)%sides;d=base+(j+1)*sides+i
+   p.tri(a,d,b);p.tri(b,d,c)
 
 def make_character():
-    parts=[]
-    def part(name,mat):
-        x=Part(name,mat);parts.append(x);return x
-    # body / silhouette, Y is vertical; front faces +Z
-    p=part('Body_Core','skin'); sphere(p,(0,1.02,0),(0.23,0.34,0.14)); sphere(p,(0,1.48,0),(0.18,0.22,0.13))
-    p=part('Head','skin'); sphere(p,(0,2.02,0),(0.255,0.32,0.23),24,16)
-    p=part('Neck','skin'); cylinder_between(p,(0,1.69,0),(0,1.82,0),0.075,0.07)
-    # face eyes, iris highlights, mouth and brows
-    p=part('Eyes_Blue','eye')
-    for x in (-0.105,0.105): sphere(p,(x,2.055,0.207),(0.052,0.078,0.025),12,8)
-    p=part('Eye_Highlights','white')
-    for x in (-0.115,0.095): sphere(p,(x-0.012,2.082,0.231),(0.014,0.022,0.009),8,6)
-    p=part('Mouth','pink'); sphere(p,(0,1.91,0.224),(0.035,0.009,0.008),10,6)
-    p=part('Brows','hair');
-    for x in (-0.105,0.105): cylinder_between(p,(x-0.045,2.145,0.205),(x+0.045,2.15,0.205),0.012,0.009,8)
-    # dress bodice, collar and apron
-    p=part('Dress_Bodice','dress'); sphere(p,(0,1.43,0),(0.225,0.27,0.17))
-    p=part('White_Collar','white'); cylinder_between(p,(-0.14,1.64,0.02),(0,1.72,0.04),0.055,0.04); cylinder_between(p,(0,1.72,0.04),(0.14,1.64,0.02),0.04,0.055)
-    p=part('Apron','white'); sphere(p,(0,1.37,0.155),(0.15,0.22,0.035))
-    p=part('Skirt_Blue','dress')
-    # flared skirt surface as rings
-    base=len(p.v); n=32
-    for y,r in ((1.27,0.19),(1.04,0.39)):
-        for i in range(n):
-            a=2*math.pi*i/n;p.v.append((r*math.cos(a),y,r*math.sin(a)))
-    for i in range(n):j=(i+1)%n;p.tri(base+i,base+j,base+n+i);p.tri(base+j,base+n+j,base+n+i)
-    # pleat accents
-    p=part('Skirt_Pleats','blue')
-    for i in range(16):
-        a=2*math.pi*i/16; r=0.395
-        cylinder_between(p,(0.21*math.cos(a),1.25,0.21*math.sin(a)),(r*math.cos(a),1.045,r*math.sin(a)),0.012,0.009,6)
-    p=part('Apron_Ruffles','white')
-    for i in range(24):
-        a=2*math.pi*i/24;sphere(p,(0.29*math.cos(a),1.055,0.29*math.sin(a)),(0.035,0.045,0.025),8,5)
-    # arms, cuffs, gloves
-    p=part('Arms','skin')
-    for side in (-1,1):
-        shoulder=(side*0.22,1.57,0); elbow=(side*0.34,1.34,0.035); hand=(side*0.39,1.15,0.10)
-        cylinder_between(p,shoulder,elbow,0.075,0.058); cylinder_between(p,elbow,hand,0.055,0.04); sphere(p,hand,(0.055,0.07,0.045))
-    p=part('Sleeves','white')
-    for side in (-1,1): cylinder_between(p,(side*0.22,1.57,0),(side*0.29,1.46,0.02),0.095,0.07)
-    p=part('Legs','skin')
-    for side in (-1,1):
-        x=side*0.14;cylinder_between(p,(x,1.03,0),(x,0.56,0),0.075,0.055);sphere(p,(x,0.53,0),(0.06,0.07,0.06))
-    p=part('Boots','shoe')
-    for side in (-1,1):
-        x=side*0.14;sphere(p,(x,0.39,0.055),(0.09,0.14,0.15));cylinder_between(p,(x,0.42,0),(x,0.52,0),0.07,0.065)
-    p=part('Hair_Cap','hair');sphere(p,(0,2.19,-0.015),(0.275,0.23,0.245),24,14)
-    p=part('Hair_Back','hair');sphere(p,(0,1.99,-0.16),(0.29,0.43,0.15),20,12)
-    p=part('Hair_Fringe','hair')
-    for x in (-0.19,-0.12,-0.04,0.04,0.12,0.19):
-        cylinder_between(p,(x*0.7,2.28,0.12),(x,2.02,0.205),0.055,0.018,10)
-    p=part('Side_Locks','hair_light')
-    for side in (-1,1):
-        cylinder_between(p,(side*0.22,2.13,0.02),(side*0.24,1.73,0.02),0.065,0.025,10)
-    p=part('Hair_Ribbon','blue')
-    sphere(p,(-0.13,2.32,-0.015),(0.13,0.055,0.045));cylinder_between(p,(-0.2,2.31,-0.01),(-0.32,2.22,-0.005),0.045,0.008,8);cylinder_between(p,(-0.08,2.31,-0.01),(0.03,2.22,-0.005),0.045,0.008,8)
-    p=part('Maid_Headband','white');cylinder_between(p,(-0.19,2.31,-0.015),(0.19,2.31,-0.015),0.025,0.025,10)
-    p=part('Gold_Brooch','gold');sphere(p,(0,1.53,0.18),(0.045,0.055,0.025),10,8)
-    # small boot/garment trim accents
-    p=part('Gold_Trim','gold')
-    cylinder_between(p,(-0.23,1.2,0),(0.23,1.2,0),0.012,0.012,8)
-    return parts
+ parts=[]
+ def P(n,m): q=Part(n,m);parts.append(q);return q
+ # body silhouette, shoulders/waist/hips
+ p=P("Torso_Skin","skin");ellipsoid(p,(0,1.48,0),(0.205,.29,.135));ellipsoid(p,(0,1.25,-.005),(.205,.18,.14))
+ p=P("Neck","skin");ellipsoid(p,(0,1.72,0),(.075,.12,.075),20,12)
+ p=P("Face_Head","skin");ellipsoid(p,(0,2.055,.015),(.235,.305,.205),48,32)
+ # subtle chin/jaw volume
+ p=P("Ear_Details","skin_shadow")
+ for x in (-1,1): ellipsoid(p,(x*.226,2.02,.005),(.035,.065,.045),16,12)
+ # eyes layered on front plane
+ p=P("Eye_Whites","white")
+ for x in (-.092,.092): ellipsoid(p,(x,2.075,.196),(.061,.087,.027),24,16)
+ p=P("Iris_Blue","eye")
+ for x in (-.092,.092): ellipsoid(p,(x,2.07,.220),(.038,.061,.018),24,16)
+ p=P("Iris_Light","iris_light")
+ for x in (-.092,.092): ellipsoid(p,(x,2.055,.235),(.022,.036,.010),20,12)
+ p=P("Pupils","black")
+ for x in (-.092,.092): ellipsoid(p,(x,2.071,.241),(.014,.029,.008),16,12)
+ p=P("Eye_Highlights","white")
+ for x in (-.103,.081):
+  ellipsoid(p,(x,2.096,.251),(.012,.018,.006),12,8)
+  ellipsoid(p,(x+.012,2.052,.248),(.006,.008,.004),10,6)
+ p=P("Upper_Eyelashes","hair_dark")
+ for x in (-1,1):
+  tube(p,[(x*.045,2.145,.211),(x*.09,2.158,.218),(x*.14,2.14,.20)],[.009,.012,.002],8)
+ p=P("Brows","hair")
+ for x in (-1,1): tube(p,[(x*.05,2.18,.195),(x*.095,2.19,.197),(x*.14,2.18,.18)],[.008,.009,.003],8)
+ p=P("Nose","skin_shadow");ellipsoid(p,(0,2.005,.211),(.014,.018,.012),12,8)
+ p=P("Mouth","mouth");ellipsoid(p,(0,1.935,.203),(.027,.008,.008),16,8)
+ # dress fitted bodice and bib
+ p=P("Maid_Bodice","dress");ellipsoid(p,(0,1.48,.008),(.215,.255,.15),32,24)
+ p=P("Apron_Bib","white");ellipsoid(p,(0,1.49,.139),(.118,.19,.027),32,20)
+ p=P("Apron_Bow","white")
+ ellipsoid(p,(-.055,1.30,.15),(.065,.04,.025));ellipsoid(p,(.055,1.30,.15),(.065,.04,.025));ellipsoid(p,(0,1.30,.17),(.025,.03,.018))
+ p=P("Collar","white")
+ tube(p,[(-.15,1.68,.025),(-.09,1.72,.09),(0,1.69,.12),(.09,1.72,.09),(.15,1.68,.025)],[.027,.03,.032,.03,.027],12)
+ # flared layered skirt with dark underskirt and blue outer shell
+ p=P("Skirt_Underskirt","dress");ring_surface(p,[(1.30,.17,.14),(1.02,.39,.31)],64)
+ p=P("Skirt_Outer","blue");ring_surface(p,[(1.29,.18,.15),(1.015,.405,.33)],64)
+ p=P("Skirt_Hem","white")
+ for i in range(40):
+  a=2*math.pi*i/40
+  tube(p,[(.39*math.cos(a),1.025,.315*math.sin(a)),(.405*math.cos(a),1.012,.33*math.sin(a))],[.009,.006],6)
+ p=P("Skirt_Pleat_Seams","hair_light")
+ for i in range(20):
+  a=2*math.pi*i/20
+  tube(p,[(.18*math.cos(a),1.28,.15*math.sin(a)),(.405*math.cos(a),1.02,.33*math.sin(a))],[.009,.004],6)
+ # arms, sleeves, cuffs, palms and fingers
+ p=P("Arms","skin")
+ for s in (-1,1):
+  tube(p,[(s*.19,1.60,0),(s*.29,1.48,.005),(s*.34,1.32,.025),(s*.37,1.20,.06)],[.067,.058,.047,.035],16)
+  ellipsoid(p,(s*.37,1.17,.07),(.047,.062,.032),20,12)
+  for f in range(4):
+   xx=s*(.345+f*.014)
+   tube(p,[(xx,1.16,.084),(xx+s*.008,1.115,.09),(xx+s*.006,1.09,.085)],[.012,.009,.004],8)
+ p=P("Puff_Sleeves","white")
+ for s in (-1,1):
+  ellipsoid(p,(s*.235,1.565,.005),(.105,.105,.095),24,16)
+  tube(p,[(s*.18,1.49,.04),(s*.25,1.46,.045),(s*.31,1.43,.04)],[.018,.02,.014],10)
+ # legs and boots
+ p=P("Legs","skin")
+ for s in (-1,1):
+  tube(p,[(s*.12,1.04,0),(s*.125,.82,0),(s*.13,.60,.005)],[.073,.061,.052],16)
+ p=P("Boots","shoe")
+ for s in (-1,1):
+  ellipsoid(p,(s*.13,.47,.035),(.075,.15,.13),24,16)
+  tube(p,[(s*.13,.54,0),(s*.13,.62,0)],[.058,.052],16)
+ p=P("Boot_Cuffs","white")
+ for s in (-1,1): ellipsoid(p,(s*.13,.585,.005),(.059,.025,.06),20,10)
+ # hair cap/back volume, distinct curved locks
+ p=P("Hair_Cap","hair");ellipsoid(p,(0,2.235,-.025),(.258,.205,.22),40,24)
+ p=P("Hair_Back","hair_dark");ellipsoid(p,(0,2.015,-.145),(.265,.39,.115),36,24)
+ p=P("Hair_Back_Layers","hair")
+ for s in (-1,1):
+  for k in range(3):
+   x=s*(.17+k*.025)
+   tube(p,[(x,2.20,-.10),(s*(.22+k*.018),2.02,-.19),(s*(.23+k*.018),1.82,-.15),(s*(.20+k*.02),1.70,-.10)],[.052,.048,.032,.004],12)
+ p=P("Bangs_Main","hair_light")
+ for i in range(7):
+  x=-.18+i*.06
+  tube(p,[(x*.72,2.39,.02),(x,2.30,.14),(x*.95,2.18,.19),(x*.82,2.075,.19)],[.055,.049,.031,.003],14)
+ p=P("Bangs_Shadow","hair_dark")
+ for i in range(6):
+  x=-.15+i*.06
+  tube(p,[(x*.7,2.36,.035),(x*.88,2.25,.16),(x*.8,2.16,.194)],[.014,.011,.002],8)
+ p=P("Side_Framing_Locks","hair")
+ for s in (-1,1):
+  for k in range(2):
+   x=s*(.19+k*.035)
+   tube(p,[(s*.18,2.22,.045),(x,2.10,.16),(s*(.22+k*.025),1.93,.15),(s*(.205+k*.025),1.77,.12)],[.052,.045,.03,.003],14)
+ # hair accessory, maid headband and bow
+ p=P("Headband","white")
+ tube(p,[(-.20,2.34,-.035),(-.15,2.405,-.06),(0,2.43,-.075),(.15,2.405,-.06),(.20,2.34,-.035)],[.018,.02,.02,.02,.018],12)
+ p=P("Hair_Ribbon","blue")
+ ellipsoid(p,(-.16,2.36,-.09),(.045,.035,.035),16,10)
+ tube(p,[(-.17,2.36,-.09),(-.27,2.31,-.07),(-.30,2.23,-.045)],[.035,.023,.002],12)
+ tube(p,[(-.15,2.36,-.09),(-.08,2.30,-.08),(-.04,2.22,-.05)],[.035,.022,.002],12)
+ p=P("Brooch","gold");ellipsoid(p,(0,1.57,.17),(.035,.043,.018),20,12)
+ p=P("Waist_Ribbon","blue")
+ ellipsoid(p,(-.19,1.28,-.01),(.07,.045,.045));ellipsoid(p,(.19,1.28,-.01),(.07,.045,.045))
+ return parts
 
-def write_obj(parts, folder, stem):
-    mtl=[]; lines=['# JARVIS Character Forge procedural anime character','mtllib '+stem+'.mtl']; offset=1
-    for name,color in PALETTE.items(): mtl += [f'newmtl {name}',f'Kd {color[0]} {color[1]} {color[2]}','Ka 0.08 0.08 0.08','Ks 0.25 0.25 0.25','Ns 32','']
-    for p in parts:
-        lines += [f'o {p.name}',f'usemtl {p.material}']
-        lines += [f'v {x:.6f} {y:.6f} {z:.6f}' for x,y,z in p.v]
-        lines += [f'f {a+offset} {b+offset} {c+offset}' for a,b,c in p.f]
-        offset += len(p.v)
-    (folder/(stem+'.obj')).write_text('\n'.join(lines)+'\n');(folder/(stem+'.mtl')).write_text('\n'.join(mtl))
+def write_obj(parts,folder,stem):
+ mtl=[];lines=['# JARVIS Character Forge v0.6','mtllib '+stem+'.mtl'];off=1
+ for name,c in PALETTE.items():mtl += [f'newmtl {name}',f'Kd {c[0]} {c[1]} {c[2]}','Ka 0.06 0.06 0.06','Ks 0.3 0.3 0.3','Ns 48','']
+ for p in parts:
+  if not p.v or not p.f:continue
+  lines += [f'o {p.name}',f'usemtl {p.material}']
+  lines += [f'v {x:.6f} {y:.6f} {z:.6f}' for x,y,z in p.v]
+  lines += [f'f {a+off} {b+off} {c+off}' for a,b,c in p.f];off+=len(p.v)
+ (folder/(stem+'.obj')).write_text('\n'.join(lines)+'\n')
+ (folder/(stem+'.mtl')).write_text('\n'.join(mtl))
 
-def write_glb(parts, folder, stem):
-    blob=bytearray(); views=[]; accessors=[]; meshes=[]; nodes=[]; materials=[]
-    def add_view(data, target):
-        while len(blob)%4: blob.append(0)
-        off=len(blob);blob.extend(data);views.append({'buffer':0,'byteOffset':off,'byteLength':len(data),'target':target});return len(views)-1
-    for name,c in PALETTE.items(): materials.append({'name':name,'pbrMetallicRoughness':{'baseColorFactor':list(c),'metallicFactor':0.0,'roughnessFactor':0.72}})
-    mat_index={n:i for i,n in enumerate(PALETTE)}
-    for p in parts:
-        if not p.v or not p.f: continue
-        pos=[v for tri in p.f for idx in tri for v in p.v[idx]]
-        # duplicate vertices per face for flat-shaded clean procedural surfaces
-        packed=struct.pack('<%sf'%len(pos),*pos); vi=add_view(packed,34962)
-        count=len(pos)//3
-        xs=pos[0::3];ys=pos[1::3];zs=pos[2::3]
-        accessors.append({'bufferView':vi,'componentType':5126,'count':count,'type':'VEC3','min':[min(xs),min(ys),min(zs)],'max':[max(xs),max(ys),max(zs)]}); ai=len(accessors)-1
-        # Flat face normals; vertices are duplicated per triangle above.
-        normals=[]
-        for k in range(0, len(pos), 9):
-            a=pos[k:k+3]; b=pos[k+3:k+6]; c=pos[k+6:k+9]
-            u=(b[0]-a[0],b[1]-a[1],b[2]-a[2]); v=(c[0]-a[0],c[1]-a[1],c[2]-a[2])
-            nx=u[1]*v[2]-u[2]*v[1]; ny=u[2]*v[0]-u[0]*v[2]; nz=u[0]*v[1]-u[1]*v[0]
-            length=math.sqrt(nx*nx+ny*ny+nz*nz) or 1.0; normal=(nx/length,ny/length,nz/length)
-            normals.extend(normal*3)
-        ni_view=add_view(struct.pack('<%sf'%len(normals),*normals),34962)
-        accessors.append({'bufferView':ni_view,'componentType':5126,'count':count,'type':'VEC3'}); ni=len(accessors)-1
-        # sequential indices
-        inds=list(range(count)); ib=struct.pack('<%sI'%len(inds),*inds); ii_view=add_view(ib,34963)
-        accessors.append({'bufferView':ii_view,'componentType':5125,'count':len(inds),'type':'SCALAR'});ii=len(accessors)-1
-        meshes.append({'name':p.name,'primitives':[{'attributes':{'POSITION':ai,'NORMAL':ni},'indices':ii,'material':mat_index[p.material]}]})
-        nodes.append({'name':p.name,'mesh':len(meshes)-1})
-    doc={'asset':{'version':'2.0','generator':'JARVIS Character Forge Offline'},'scene':0,'scenes':[{'nodes':list(range(len(nodes)))}],'nodes':nodes,'meshes':meshes,'materials':materials,'buffers':[{'byteLength':len(blob)}],'bufferViews':views,'accessors':accessors}
-    js=json.dumps(doc,separators=(',',':')).encode();
-    while len(js)%4:js+=b' '
-    while len(blob)%4:blob.append(0)
-    total=12+8+len(js)+8+len(blob)
-    glb=struct.pack('<III',0x46546C67,2,total)+struct.pack('<II',len(js),0x4E4F534A)+js+struct.pack('<II',len(blob),0x004E4942)+blob
-    (folder/(stem+'.glb')).write_bytes(glb)
+def write_glb(parts,folder,stem):
+ blob=bytearray();views=[];accessors=[];meshes=[];nodes=[];materials=[]
+ def view(data,target):
+  while len(blob)%4:blob.append(0)
+  off=len(blob);blob.extend(data);views.append({'buffer':0,'byteOffset':off,'byteLength':len(data),'target':target});return len(views)-1
+ for n,c in PALETTE.items():
+  materials.append({'name':n,'pbrMetallicRoughness':{'baseColorFactor':list(c),'metallicFactor':0.0,'roughnessFactor':0.58 if n not in ('eye','gold') else .32}})
+ mi={n:i for i,n in enumerate(PALETTE)}
+ for p in parts:
+  if not p.v or not p.f:continue
+  # smooth vertex normals averaged from adjacent faces; preserve indexed geometry.
+  norms=[[0.,0.,0.] for _ in p.v]
+  for a,b,c in p.f:
+   A=p.v[a];B=p.v[b];C=p.v[c]
+   u=[B[i]-A[i] for i in range(3)];v=[C[i]-A[i] for i in range(3)]
+   n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
+   for idx in (a,b,c):
+    for k in range(3):norms[idx][k]+=n[k]
+  for n in norms:
+   l=math.sqrt(sum(x*x for x in n)) or 1
+   for k in range(3):n[k]/=l
+  pos=[x for v in p.v for x in v];normal=[x for n in norms for x in n]
+  idx=[i for f in p.f for i in f]
+  pv=view(struct.pack('<%sf'%len(pos),*pos),34962)
+  nv=view(struct.pack('<%sf'%len(normal),*normal),34962)
+  iv=view(struct.pack('<%sI'%len(idx),*idx),34963)
+  xs=pos[0::3];ys=pos[1::3];zs=pos[2::3]
+  accessors.append({'bufferView':pv,'componentType':5126,'count':len(p.v),'type':'VEC3','min':[min(xs),min(ys),min(zs)],'max':[max(xs),max(ys),max(zs)]});pa=len(accessors)-1
+  accessors.append({'bufferView':nv,'componentType':5126,'count':len(p.v),'type':'VEC3'});na=len(accessors)-1
+  accessors.append({'bufferView':iv,'componentType':5125,'count':len(idx),'type':'SCALAR'});ia=len(accessors)-1
+  meshes.append({'name':p.name,'primitives':[{'attributes':{'POSITION':pa,'NORMAL':na},'indices':ia,'material':mi[p.material]}]})
+  nodes.append({'name':p.name,'mesh':len(meshes)-1})
+ doc={'asset':{'version':'2.0','generator':'JARVIS Character Forge v0.6 Offline'},'scene':0,'scenes':[{'nodes':list(range(len(nodes)))}],'nodes':nodes,'meshes':meshes,'materials':materials,'buffers':[{'byteLength':len(blob)}],'bufferViews':views,'accessors':accessors}
+ js=json.dumps(doc,separators=(',',':')).encode()
+ while len(js)%4:js+=b' '
+ while len(blob)%4:blob.append(0)
+ total=12+8+len(js)+8+len(blob)
+ (folder/(stem+'.glb')).write_bytes(struct.pack('<III',0x46546C67,2,total)+struct.pack('<II',len(js),0x4E4F534A)+js+struct.pack('<II',len(blob),0x004E4942)+blob)
 
-def generate_character(output_dir: Path, character: str='rem-inspired') -> dict:
-    output_dir.mkdir(parents=True,exist_ok=True)
-    stem='jarvis_rem_character'
-    parts=make_character();write_obj(parts,output_dir,stem);write_glb(parts,output_dir,stem)
-    report={'name':'Rem-inspired anime maid (procedural original starter)','generator':'JARVIS Character Forge offline procedural v0.1','character':character,'parts':len(parts),'triangles':sum(len(p.f) for p in parts),'files':[stem+'.glb',stem+'.obj',stem+'.mtl'],'limitations':['Stylized blockout, not a production-quality likeness','No UV maps or textures yet','No skeleton/skin weights/animation yet','GLB contains separate named mesh parts and palette materials']}
-    (output_dir/(stem+'_report.json')).write_text(json.dumps(report,indent=2))
-    return report
+def generate_character(output_dir:Path,character:str='rem-inspired')->dict:
+ output_dir.mkdir(parents=True,exist_ok=True);stem='jarvis_rem_character';parts=make_character()
+ write_obj(parts,output_dir,stem);write_glb(parts,output_dir,stem)
+ tris=sum(len(p.f) for p in parts);verts=sum(len(p.v) for p in parts)
+ report={'name':'Original blue-haired maid anime character','generator':'JARVIS Character Forge v0.6 smooth procedural geometry','character':character,'parts':len(parts),'vertices':verts,'triangles':tris,'materials':len(PALETTE),'files':[stem+'.glb',stem+'.obj',stem+'.mtl',stem+'_report.json'],'features':['smooth indexed mesh normals','layered anime eyes with iris, pupils and highlights','curved tapered hair locks and layered fringe','flared layered skirt with hem and pleat seams','separate clothing, accessories, limbs and facial features'],'limitations':['Procedural stylized model; not a direct reconstruction of a copyrighted character','No UV texture maps yet; uses PBR palette materials','No skeleton, skin weights or animation yet','Facial detail and garment folds remain stylized and need further refinement']}
+ (output_dir/(stem+'_report.json')).write_text(json.dumps(report,indent=2));return report

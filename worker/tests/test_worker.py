@@ -178,3 +178,26 @@ def test_character_forge_generates_real_local_glb_and_obj():
 
 def test_character_forge_rejects_unknown_preset():
     assert client.post("/api/v1/character/generate", json={"character": "unknown"}).status_code == 400
+
+
+def test_character_forge_v06_has_smooth_geometry_and_detail_parts():
+    from pathlib import Path
+    from jarvis_worker.character_forge import generate_character
+    target = Path(tmp) / "forge-v06-quality"
+    report = generate_character(target)
+    assert report["generator"].endswith("v0.6 smooth procedural geometry")
+    assert report["parts"] >= 30
+    assert report["vertices"] >= 15000
+    assert report["triangles"] >= 25000
+    assert report["materials"] >= 14
+    assert "layered anime eyes with iris, pupils and highlights" in report["features"]
+    assert "curved tapered hair locks and layered fringe" in report["features"]
+    glb = (target / "jarvis_rem_character.glb").read_bytes()
+    import struct, json
+    magic, version, total = struct.unpack_from("<III", glb, 0)
+    json_len, json_type = struct.unpack_from("<II", glb, 12)
+    document = json.loads(glb[20:20 + json_len].decode().strip())
+    assert magic == 0x46546C67 and version == 2 and total == len(glb)
+    assert json_type == 0x4E4F534A
+    assert len(document["meshes"]) >= 30
+    assert all("NORMAL" in mesh["primitives"][0]["attributes"] for mesh in document["meshes"])

@@ -23,7 +23,7 @@ The Python virtual environment is kept under Termux's private home. Generated pr
 
 ## What is implemented
 
-- Local-first model router: tries a local OpenAI-compatible model endpoint first, then an optional remote OpenAI-compatible API.
+- Local model router: supports a local OpenAI-compatible model endpoint. Remote model fallback is disabled.
 - Local CPU fallback: a built-in rule-based director can still create a procedural laboratory/room scene when no model endpoint is configured.
 - Specialized lightweight workers: geometry, materials, world layout, cinematography/animation plan and quality validation.
 - Scene outputs: `scene_preview.obj`, `scene_preview.mtl`, `scene_spec.json`, `scene.py`, and a README.
@@ -68,3 +68,6 @@ The OBJ preview is a lightweight blockout mesh; the Blender Python script uses t
 With the worker running, open `http://127.0.0.1:8765/docs` in a browser on the phone.
 
 \n## Local-only mode (v0.4)\nRemote model fallback and external image-to-3D provider calls are disabled. Configure only a local OpenAI-compatible GGUF server. With no local model configured, deterministic workers and the Swarm coordination API remain available; they do not provide neural reasoning or actual Blender UI control.\n\n## Swarm API\n- `GET /api/v1/swarm/agents`\n- `POST /api/v1/swarm/tasks` with `{"goal":"..."}`\n- `GET /api/v1/swarm/tasks`\n- `GET /api/v1/swarm/tasks/{task_id}`\n- `POST /api/v1/swarm/tasks/{task_id}/run`\n- `GET /api/v1/swarm/tasks/{task_id}/messages`\n- `GET /api/v1/swarm/agents/{agent_id}/memory`\n
+
+## Character Forge v0.6
+The offline generator creates a smoother, more detailed stylized blue-haired maid character with indexed meshes, averaged vertex normals, layered eye geometry, curved tapered hair locks, a flared layered skirt, and separate garment/accessory parts. Outputs include GLB, OBJ, MTL, and a JSON report. This is still procedural stylized geometry: UV texture maps, production rigging, skin weights, animation, and cinematic reconstruction are not implemented.
