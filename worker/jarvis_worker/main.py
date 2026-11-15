@@ -395,6 +395,7 @@ def character_download(job_id: str, filename: str, authorization: str | None = H
 
 # --- JARVIS Swarm v0.4: offline coordination API ---
 from .swarm import SwarmRuntime
+from .spatial import SpatialEngine
 
 class SwarmTaskRequest(BaseModel):
     goal: str = Field(min_length=3, max_length=4000)
@@ -457,3 +458,56 @@ def blender_runtime_status(authorization: str | None = Header(default=None)):
     return {"available": bool(binary), "binary": binary,
             "mode": "background Blender Python" if binary else "script-and-OBJ export only",
             "note": "The Android Blender app is a separate sandbox. Termux cannot silently control its UI or embedded Python unless that app exposes a compatible bridge."}
+
+
+# --- JARVIS Spatial Forge / Nano-Builder local scene API ---
+class NanoBuildRequest(BaseModel):
+    goal: str = Field(min_length=3, max_length=1000)
+
+class SpatialOperationRequest(BaseModel):
+    operation: str = Field(min_length=3, max_length=40)
+    type: str | None = None
+    name: str | None = None
+    object_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    transform: dict[str, Any] = Field(default_factory=dict)
+    material: dict[str, Any] = Field(default_factory=dict)
+    region: str = "general"
+    worker: str = "manual"
+
+SPATIAL = SpatialEngine(APP_ROOT)
+
+@app.get("/api/v1/spatial/scene")
+def spatial_scene(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return SPATIAL.snapshot()
+
+@app.post("/api/v1/spatial/operations")
+def spatial_operation(req: SpatialOperationRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    try:
+        return {"ok": True, "object": SPATIAL.operation(req.model_dump(exclude_none=True))}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+@app.post("/api/v1/spatial/nano-build")
+def spatial_nano_build(req: NanoBuildRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    return {"ok": True, "mode": "local_geometry_workers", "result": SPATIAL.build_demo(req.goal)}
+
+@app.get("/api/v1/spatial/export/obj")
+def spatial_export_obj(authorization: str | None = Header(default=None)):
+    auth(authorization)
+    lines=["# JARVIS Spatial Forge editable primitive blockout"]
+    # Export primitive placeholders as scaled vertices/faces; scene remains editable in scene.json.
+    for i,obj in enumerate(SPATIAL.scene["objects"]):
+        x,y,z=obj["transform"].get("position",[0,0,0]); sx,sy,sz=obj["scale"]
+        base=len([line for line in lines if line.startswith("v ")])
+        verts=[(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)]
+        lines.append("o "+re.sub(r"[^A-Za-z0-9_ -]","_",obj["name"]).replace(" ","_"))
+        for a,b,c in verts: lines.append(f"v {x+a*sx/2:.6f} {y+b*sy/2:.6f} {z+c*sz/2:.6f}")
+        for face in ((1,2,3,4),(5,8,7,6),(1,5,6,2),(2,6,7,3),(3,7,8,4),(5,1,4,8)):
+            lines.append("f "+" ".join(str(base+n) for n in face))
+    out=OUTPUTS/"jarvis_spatial_blockout.obj"
+    out.write_text("\n".join(lines)+"\n")
+    return FileResponse(out, filename=out.name, media_type="text/plain")

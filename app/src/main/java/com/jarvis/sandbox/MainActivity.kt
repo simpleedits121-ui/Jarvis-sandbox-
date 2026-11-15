@@ -115,7 +115,7 @@ fun SandboxApp(workspace: File) {
             },
             bottomBar = {
                 NavigationBar(containerColor = Panel) {
-                    listOf("Home", "Files", "Terminal", "Agent", "Swarm", "Bridge", "3D Lab").forEach { item ->
+                    listOf("Home", "Files", "Terminal", "Agent", "Swarm", "Spatial", "Bridge", "3D Lab").forEach { item ->
                         NavigationBarItem(
                             selected = page == item,
                             onClick = { page = item },
@@ -127,6 +127,7 @@ fun SandboxApp(workspace: File) {
                                     "Agent" -> Icons.Default.Psychology
                                     "Bridge" -> Icons.Default.ViewInAr
                                     "Swarm" -> Icons.Default.Groups
+                                    "Spatial" -> Icons.Default.ViewInAr
                                     else -> Icons.Default.Polymer
                                 }, contentDescription = item)
                             },
@@ -158,6 +159,7 @@ fun SandboxApp(workspace: File) {
                     })
                     "Agent" -> AgentScreen(workerUrl = workerUrl, workerToken = workerToken)
                     "Swarm" -> SwarmDashboard(workerUrl = workerUrl, workerToken = workerToken)
+                    "Spatial" -> SpatialForgeScreen(workerUrl = workerUrl, workerToken = workerToken)
                     "Bridge" -> BridgeScreen(onImport = { importLauncher.launch(arrayOf("*/*")) })
                     "3D Lab" -> ThreeDLabScreen(
                         workerUrl = workerUrl,
