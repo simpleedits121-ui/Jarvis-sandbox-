@@ -159,3 +159,22 @@ def test_swarm_agent_memory_is_available_after_run():
     memory = client.get("/api/v1/swarm/agents/geometry/memory")
     assert memory.status_code == 200
     assert memory.json()["entries"]
+
+def test_character_forge_generates_real_local_glb_and_obj():
+    response = client.post("/api/v1/character/generate", json={"character": "rem-inspired"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "generated"
+    assert data["report"]["parts"] >= 15
+    assert data["report"]["triangles"] >= 500
+    job_id = data["job_id"]
+    glb = client.get(f"/api/v1/character/{job_id}/jarvis_rem_character.glb")
+    assert glb.status_code == 200
+    assert glb.content[:4] == b"glTF"
+    obj = client.get(f"/api/v1/character/{job_id}/jarvis_rem_character.obj")
+    assert obj.status_code == 200
+    assert b"o Head" in obj.content
+
+
+def test_character_forge_rejects_unknown_preset():
+    assert client.post("/api/v1/character/generate", json={"character": "unknown"}).status_code == 400

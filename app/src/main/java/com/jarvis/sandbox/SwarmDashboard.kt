@@ -1,5 +1,7 @@
 package com.jarvis.sandbox
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +33,9 @@ fun SwarmDashboard(workerUrl: String, workerToken: String) {
     var busy by remember { mutableStateOf(false) }
     var selectedTask by remember { mutableStateOf<SwarmTaskUi?>(null) }
     var taskDetail by remember { mutableStateOf("") }
+    var forgeStatus by remember { mutableStateOf("Generate a first offline Rem-inspired character blockout.") }
+    var forgeUrl by remember { mutableStateOf("") }
+    val context = LocalContext.current
 
     fun refresh() {
         busy = true
@@ -58,6 +64,31 @@ fun SwarmDashboard(workerUrl: String, workerToken: String) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 result.onSuccess { status = "Task queued • ${it.optString("task_id").take(8)}"; goal = ""; refresh() }
                     .onFailure { status = "Could not create task: ${it.message}"; busy = false }
+            }
+        }
+    }
+
+    fun generateRem() {
+        if (busy) return
+        busy = true
+        forgeStatus = "Generating character meshes locally…"
+        thread {
+            val result = runCatching { agentHttp(workerUrl, "/api/v1/character/generate", workerToken, "POST", JSONObject().put("character", "rem-inspired")) }
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                result.onSuccess { json ->
+                    val report = json.optJSONObject("report")
+                    val files = json.optJSONArray("files")
+                    var glbPath = ""
+                    if (files != null) for (i in 0 until files.length()) {
+                        val item = files.optJSONObject(i) ?: continue
+                        if (item.optString("filename").endsWith(".glb")) glbPath = item.optString("download")
+                    }
+                    forgeUrl = glbPath
+                    forgeStatus = "Generated ${report?.optInt("parts") ?: 0} mesh parts • ${report?.optInt("triangles") ?: 0} triangles. Starter blockout only; textures, rig and animation are next."
+                    status = "Character Forge generated a local GLB asset"
+                }.onFailure { forgeStatus = "Generation failed: ${it.message}" }
+                busy = false
+                refresh()
             }
         }
     }
@@ -94,7 +125,20 @@ fun SwarmDashboard(workerUrl: String, workerToken: String) {
             Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("LOCAL STATUS", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 Text(status, color = Color.White, fontSize = 12.sp)
-                Text("Coordination works offline. Neural reasoning, image analysis and actual mesh editing are not connected yet.", color = Color(0xFFB7C6D8), fontSize = 10.sp)
+                Text("Swarm coordination works offline. Character Forge now creates a procedural 3D starter mesh; neural reasoning, detailed textures and rigging are still pending.", color = Color(0xFFB7C6D8), fontSize = 10.sp)
+            }
+        }
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF14283B)), shape = RoundedCornerShape(14.dp)) {
+            Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text("CHARACTER FORGE • FIRST REM-INSPIRED BUILD", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text("Generate a real local 3D starter asset from scratch. No cloud model or paid API.", color = Color.White, fontSize = 12.sp)
+                Text(forgeStatus, color = Color(0xFFB7C6D8), fontSize = 11.sp)
+                Button(onClick = { generateRem() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.RocketLaunch, null); Spacer(Modifier.width(7.dp)); Text("Generate Rem Character")
+                }
+                if (forgeUrl.isNotBlank()) OutlinedButton(onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(workerUrl.trimEnd('/') + forgeUrl))) }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Open / download GLB") }
             }
         }
         Text("AGENT TEAM  •  ${agents.size}", color = Color(0xFF55D6FF), fontWeight = FontWeight.Bold, fontSize = 11.sp)

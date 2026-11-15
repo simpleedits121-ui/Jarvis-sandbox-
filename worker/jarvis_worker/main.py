@@ -354,6 +354,45 @@ def decide_agent_approval(approval_id: str, req: ApprovalRequest,
     path.write_text(json.dumps(row, indent=2), encoding="utf-8")
     return row
 
+
+# --- JARVIS Character Forge v0.1: offline procedural mesh generation ---
+from .character_forge import generate_character
+
+class CharacterGenerateRequest(BaseModel):
+    character: str = Field(default="rem-inspired", min_length=3, max_length=40)
+
+@app.post("/api/v1/character/generate")
+def character_generate(req: CharacterGenerateRequest, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    # Keep the first milestone deterministic, local and bounded. No external services.
+    if req.character.lower() not in ("rem", "rem-inspired", "blue-maid"):
+        raise HTTPException(400, "Supported starter preset: rem-inspired")
+    stem = f"character-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+    target = OUTPUTS / stem
+    try:
+        report = generate_character(target, req.character)
+    except Exception as exc:
+        shutil.rmtree(target, ignore_errors=True)
+        raise HTTPException(500, f"Character generation failed: {type(exc).__name__}: {exc}")
+    files = []
+    for filename in report["files"] + ["jarvis_rem_character_report.json"]:
+        files.append({"filename": filename, "download": f"/api/v1/character/{stem}/{filename}"})
+    return {"status": "generated", "job_id": stem, "report": report, "files": files,
+            "note": "Offline procedural starter generated. This is a blockout asset, not final cinematic character art."}
+
+@app.get("/api/v1/character/{job_id}/{filename}")
+def character_download(job_id: str, filename: str, authorization: str | None = Header(default=None)):
+    auth(authorization)
+    if not re.fullmatch(r"character-[0-9]+-[a-f0-9]{8}", job_id):
+        raise HTTPException(400, "Invalid character job id.")
+    if filename not in ("jarvis_rem_character.glb", "jarvis_rem_character.obj", "jarvis_rem_character.mtl", "jarvis_rem_character_report.json"):
+        raise HTTPException(400, "Invalid character output filename.")
+    target = (OUTPUTS / job_id / filename).resolve()
+    if target.parent != (OUTPUTS / job_id).resolve() or not target.is_file():
+        raise HTTPException(404, "Character output not found.")
+    media = "model/gltf-binary" if filename.endswith(".glb") else "application/octet-stream"
+    return FileResponse(target, filename=filename, media_type=media)
+
 # --- JARVIS Swarm v0.4: offline coordination API ---
 from .swarm import SwarmRuntime
 

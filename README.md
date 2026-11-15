@@ -63,3 +63,9 @@ The Android app now includes a **Swarm** tab alongside the existing Agent consol
 The dashboard shows each agent's role, task status and the coordinator's report. This is an offline task-coordination prototype, not autonomous neural reasoning: local GGUF inference, image understanding, Blender scene telemetry and actual mesh/rig generation remain future integrations. Cloud model fallback controls have been removed from the Android Agent screen; configure only a local OpenAI-compatible GGUF server.
 
 Android app version: **0.4.0** (versionCode 3).
+
+## JARVIS Character Forge v0.1 (offline starter)
+
+The Swarm screen includes **Generate Rem Character**. It calls `POST /api/v1/character/generate` and creates a local GLB plus OBJ/MTL and a report under `JARVIS_WORKSPACE/outputs/`. The GLB is a deterministic, multi-part procedural anime-maid blockout with named mesh parts and palette materials. It does not call a cloud service or require a GGUF model.
+
+This is the first geometry milestone, not a finished cinematic character: it has no UV unwrap, texture maps, production topology, skeleton, skin weights or animation. Those are subsequent Forge milestones. Download the GLB using the link returned by the endpoint or the dashboard's **Open / download GLB** action.
