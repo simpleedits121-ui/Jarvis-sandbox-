@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="external_nanobot_accessibility_description">Allows JARVIS Sandbox to inspect accessible interface elements and perform actions you explicitly request. Does not capture screenshots.</string>
+</resources>
